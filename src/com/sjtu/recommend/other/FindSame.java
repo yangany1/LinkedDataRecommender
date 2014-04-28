@@ -21,8 +21,8 @@ public class FindSame {
 	}
 
 	public static void main(String[] args) throws Exception {
-		String url1 = "http://dbpedia.org/resource/Valkyrie_(film)";
-		String url2 = "http://dbpedia.org/resource/Minority_Report_(film)";
+		String url1 = "http://dbpedia.org/resource/Girl_in_the_Cadillac";
+		String url2 = "http://dbpedia.org/resource/Dear_God";
 		List<FilmObject> filmList = new ArrayList<FilmObject>();
 		CommomFunction.loadFilmObjectFromFile(filmList,
 				CommomFunction.FILM_LINKS_DELETE_SAME_PREDICATE);

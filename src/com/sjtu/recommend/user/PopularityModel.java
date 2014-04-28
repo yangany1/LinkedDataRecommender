@@ -38,7 +38,7 @@ public class PopularityModel {
 					.getConnection(
 							"jdbc:mysql://localhost/paper2?useUnicode=true&characterEncoding=utf-8",
 							"root", "luo");
-			String sql = "select * from rating where userid=" + userid
+			String sql = "select * from new_rating_test where userid=" + userid
 					+ " order by time asc"; // 查询数据的sql语句
 			Statement st = (Statement) conn.createStatement(); // 创建用于执行静态sql语句的Statement对象，st属局部变量
 			ResultSet rs = st.executeQuery(sql); // 执行sql查询语句，返回查询数据的结果集
@@ -199,21 +199,21 @@ public class PopularityModel {
 		return sortedMap;
 	}
 
-	public static Map<String, Double> getTopNMap(Map<String, Double> oriMap) {
-		Map<String, Double> newMap = new LinkedHashMap<String, Double>();
-		Iterator<String> it = oriMap.keySet().iterator();
-		int i = 0;
-		for (String s : oriMap.keySet()) {
-			String id = s;
-			double fre = oriMap.get(s);
-			newMap.put(id, fre);
-			i++;
-			if (i >= n)
-				break;
-
-		}
-		return newMap;
-	}
+//	public static Map<String, Double> getTopNMap(Map<String, Double> oriMap) {
+//		Map<String, Double> newMap = new LinkedHashMap<String, Double>();
+//		Iterator<String> it = oriMap.keySet().iterator();
+//		int i = 0;
+//		for (String s : oriMap.keySet()) {
+//			String id = s;
+//			double fre = oriMap.get(s);
+//			newMap.put(id, fre);
+//			i++;
+//			if (i >= n)
+//				break;
+//
+//		}
+//		return newMap;
+//	}
 
 	public static void printMap(Map<String, Double> oriMap) {
 		for (String s : oriMap.keySet()) {
@@ -300,17 +300,66 @@ public class PopularityModel {
 	public static Map<Integer, Integer> loadMoviePopular() throws Exception{
 		Map<Integer, Integer> pMap=new HashMap<Integer, Integer>();
 		BufferedReader br = new BufferedReader(new FileReader(
-				"files/data/ratings_new.dat"));
+				"files/data/ratings_new_learning.dat"));
 		String line = null;
+		int currentUser=0;
+		UserRatingObject userObject=null;
 		while ((line = br.readLine()) != null) {
+			int userid=Integer.parseInt( line.split("::")[0]);
+			if(userid!=currentUser){
+				
+				if(currentUser!=0){
+					double ave=0;
+					for(Rating r:userObject.userRatings){
+						ave+=r.rating;
+//						System.out.println(ave);
+					}
+					ave=ave/userObject.userRatings.size();
+//					System.out.println("ave="+ave);
+					
+					for(Rating r:userObject.userRatings){
+						if(r.rating>=ave){
+							if(pMap.containsKey(r.movieid)){
+								pMap.put(r.movieid, pMap.get(r.movieid)+1);
+							}else{
+								pMap.put(r.movieid, 1);
+							}
+						}
+					}
+				}
+				userObject=new UserRatingObject();
+				userObject.userid=userid;
+				currentUser=userid;
+			}
+			
 			int movie =Integer.parseInt( line.split("::")[1]);
 			int rating = Integer.parseInt(line.split("::")[2]);
-			if(pMap.containsKey(movie)){
-				pMap.put(movie, pMap.get(movie)+1);
-			}else{
-				pMap.put(movie, 1);
+			
+			Rating r=new Rating();
+			r.movieid=movie;
+			r.rating=rating;
+			userObject.userRatings.add(r);
+		}
+		
+		if(currentUser!=0){
+			double ave=0;
+			for(Rating r:userObject.userRatings){
+				ave+=r.rating;
+			}
+			ave/=userObject.userRatings.size();
+			
+			
+			for(Rating r:userObject.userRatings){
+				if(r.rating>=ave){
+					if(pMap.containsKey(r.movieid)){
+						pMap.put(r.movieid, pMap.get(r.movieid)+1);
+					}else{
+						pMap.put(r.movieid, 1);
+					}
+				}
 			}
 		}
+		
 		br.close();
 		return pMap;
 	}
@@ -329,20 +378,18 @@ public class PopularityModel {
 		for (int k = 0; k < 50; k++) {
 			int userid = k;
 
-			UserRatingObject userRating = getUserRatingObject(userid);
-
-
-			meanRating(userRating);
-			if (userRating.userRatings.size() < 10)
-				continue;
+			UserRatingObject userRatingTesting = getUserRatingObject(userid);
+//			meanRating(userRatingTesting);
+//			if (userRating.userRatings.size() < 10)
+//				continue;
 
 			totalNum++;
 //			System.out.println("用户id=" + userid);
-			UserRatingObject userRatingLearning = new UserRatingObject();
-			UserRatingObject userRatingTesting = new UserRatingObject();
+//			UserRatingObject userRatingLearning = new UserRatingObject();
+//			UserRatingObject userRatingTesting = new UserRatingObject();
 
 			// 将用户打分分为学习集合和测试集合
-			splitUserRating(userRating, userRatingLearning, userRatingTesting);
+//			splitUserRating(userRating, userRatingLearning, userRatingTesting);
 			
 			Map<Integer, Integer> sortResult = sortMapByIntegerValue(popularMap);
 			Map<Integer, Integer> sortNum = new HashMap<Integer, Integer>();
@@ -356,10 +403,12 @@ public class PopularityModel {
 			}
 
 			double MRR = 0;
-
+			meanRating(userRatingTesting);
 			for (Rating r : userRatingTesting.userRatings) {
 				
 				// System.out.println(name + "," + sortNum.get(name));
+				if(!sortNum.containsKey(r.movieid))
+					continue;
 				MRR += 1.0 / sortNum.get(r.movieid);
 				
 			}

@@ -21,6 +21,13 @@ public class CommomFunction {
 	public static int filmNum = 1582;
 	public static double frefilter=0.002;
 	
+	public static int testStart=1;
+	public static int testEnd=50;
+	
+	public static int TOPN=30;
+	
+	public static double alpha=0.9;
+	
 	public static void loadFilmObjectFromFile(List<FilmObject> filmList,String filename)
  			throws Exception {
  		CsvReader reader = new CsvReader(new FileReader(filename),',');
@@ -43,5 +50,6 @@ public class CommomFunction {
  			}
  		}
  		filmList.add(film);
+ 		
  	}
 }

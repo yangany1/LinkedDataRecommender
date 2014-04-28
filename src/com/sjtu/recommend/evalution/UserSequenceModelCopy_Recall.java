@@ -1,4 +1,4 @@
-package com.sjtu.recommend.user;
+package com.sjtu.recommend.evalution;
 
 import java.io.BufferedReader;
 import java.io.FileNotFoundException;
@@ -18,17 +18,28 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
+import com.sjtu.recommend.user.CommonRecommenderModel;
+import com.sjtu.recommend.user.Rating;
+import com.sjtu.recommend.user.UserRatingObject;
 import com.sjtu.recommend.utils.CommomFunction;
 import com.sjtu.recommend.utils.FilmObject;
 import com.sjtu.recommend.utils.Pair;
 
-public class UserSequenceModel {
+/**
+ * 论文提出的模型1，根据object给用户建模 然后推荐
+ * 
+ * @author luo
+ * 
+ */
+public class UserSequenceModelCopy_Recall {
 
-	public static int n = 40;
+	public static int topN = 40;
 	public static double para = 0;
 
+	public static Map<Integer, String> movieCode;
 	// 从数据库获得用户的历史记录
-	public static List<Rating> getUserRatingsFromMysql(int userid) {
+	public static List<Rating> getUserRatingsFromMysql(int userid,
+			String tablename) {
 		List<Rating> rList = new ArrayList<Rating>();
 		try {
 			Class.forName("com.mysql.jdbc.Driver");
@@ -36,8 +47,8 @@ public class UserSequenceModel {
 					.getConnection(
 							"jdbc:mysql://localhost/paper2?useUnicode=true&characterEncoding=utf-8",
 							"root", "luo");
-			String sql = "select * from rating where userid=" + userid
-					+ " order by time asc"; // 查询数据的sql语句
+			String sql = "select * from " + tablename + " where userid="
+					+ userid + " order by time asc"; // 查询数据的sql语句
 			Statement st = (Statement) conn.createStatement(); // 创建用于执行静态sql语句的Statement对象，st属局部变量
 			ResultSet rs = st.executeQuery(sql); // 执行sql查询语句，返回查询数据的结果集
 			// System.out.println("最后的查询结果为：");
@@ -56,10 +67,27 @@ public class UserSequenceModel {
 		return rList;
 	}
 
-	public static UserRatingObject getUserRatingObject(int userid) {
+	public static UserRatingObject getUserRatingObject(int userid,String tablename) {
 		UserRatingObject userRating = new UserRatingObject();
 		userRating.userid = userid;
-		userRating.userRatings = getUserRatingsFromMysql(userid);
+		userRating.userRatings = getUserRatingsFromMysql(userid, tablename);
+		return userRating;
+
+	}
+
+	public static UserRatingObject getUserRatingLearningObject(int userid) {
+		UserRatingObject userRating = new UserRatingObject();
+		userRating.userid = userid;
+		userRating.userRatings = getUserRatingsFromMysql(userid,
+				"rating_learning");
+		return userRating;
+
+	}
+
+	public static UserRatingObject getUserRatingTestingObject(int userid) {
+		UserRatingObject userRating = new UserRatingObject();
+		userRating.userid = userid;
+		userRating.userRatings = getUserRatingsFromMysql(userid, "rating_test");
 		return userRating;
 
 	}
@@ -167,6 +195,34 @@ public class UserSequenceModel {
 		return sortedMap;
 	}
 
+	public static Map<String, Double> sortMapByValueAsc(Map<String, Double> oriMap) {
+		Map<String, Double> sortedMap = new LinkedHashMap<String, Double>();
+		if (oriMap != null && !oriMap.isEmpty()) {
+			List<Map.Entry<String, Double>> entryList = new ArrayList<Map.Entry<String, Double>>(
+					oriMap.entrySet());
+			Collections.sort(entryList,
+					new Comparator<Map.Entry<String, Double>>() {
+						@Override
+						public int compare(Entry<String, Double> o1,
+								Entry<String, Double> o2) {
+							if (o2.getValue()< o1.getValue())
+								return 1;
+							else if (o2.getValue() > o1.getValue())
+								return -1;
+							else {
+								return 0;
+							}
+						}
+					});
+			Iterator<Map.Entry<String, Double>> iter = entryList.iterator();
+			Map.Entry<String, Double> tmpEntry = null;
+			while (iter.hasNext()) {
+				tmpEntry = iter.next();
+				sortedMap.put(tmpEntry.getKey(), tmpEntry.getValue());
+			}
+		}
+		return sortedMap;
+	}
 	public static Map<String, Double> getTopNMap(Map<String, Double> oriMap) {
 		Map<String, Double> newMap = new LinkedHashMap<String, Double>();
 		Iterator<String> it = oriMap.keySet().iterator();
@@ -176,7 +232,7 @@ public class UserSequenceModel {
 			double fre = oriMap.get(s);
 			newMap.put(id, fre);
 			i++;
-			if (i >= n)
+			if (i >= topN)
 				break;
 
 		}
@@ -191,7 +247,14 @@ public class UserSequenceModel {
 
 		}
 	}
+	public static void printMapInteger(Map<String, Integer> oriMap) {
+		for (String s : oriMap.keySet()) {
+			String id = s;
+			double fre = oriMap.get(s);
+			System.out.println(id + "," + fre);
 
+		}
+	}
 	/**
 	 * 获得所有资源对象和编码
 	 * 
@@ -252,124 +315,140 @@ public class UserSequenceModel {
 
 	public static void main(String[] args) throws Exception {
 
+		//load 电影资料
 		List<FilmObject> filmList = new ArrayList<FilmObject>();
 		Map<String, Integer> filmCode = new HashMap<String, Integer>();
 		loadFilmListandFilmCode(filmList, filmCode);
-
+		//movieLen电影编号与LOD资源对应
+	movieCode = new HashMap<Integer, String>();
+		movieLenCode(movieCode);
 		
+		double precisionSum = 0;
+		double recallSum=0;
+		int totalNum = 0;
+		for (int k = CommomFunction.testStart; k <=CommomFunction.testEnd; k++) {
+			int userid = k;
+			
+			UserRatingObject userRating = getUserRatingObject(userid,"rating");
+			meanRating(userRating);
+			if (userRating.userRatings.size() < 20)
+				continue;
 
-//		for (para = 1.05; para >= 1.0; para -= 0.01) {
-			double totalMRR = 0;
-			int totalNum = 0;
-			for (int k = 100; k < 150; k++) {
-				int userid = k;
+			totalNum++;
+			// System.out.println("用户id=" + userid);
+			// UserRatingObject userRatingLearning = new UserRatingObject();
+			// UserRatingObject userRatingTesting = new UserRatingObject();
 
-				UserRatingObject userRating = getUserRatingObject(userid);
+			UserRatingObject userRatingLearning = getUserRatingObject(userid,"rating_learning");
+			UserRatingObject userRatingTesting = getUserRatingObject(userid,"rating_test");
 
-				meanRating(userRating);
-				if (userRating.userRatings.size() < 20)
-					continue;
+			// 将用户打分分为学习集合和测试集合
+			// splitUserRating(userRating, userRatingLearning,
+			// userRatingTesting);
 
-				totalNum++;
-				// System.out.println("用户id=" + userid);
-				UserRatingObject userRatingLearning = new UserRatingObject();
-				UserRatingObject userRatingTesting = new UserRatingObject();
+			Map<String, Double> objectFrequency = new HashMap<String, Double>();// object的频率
+			LoadObjectFrequency(objectFrequency);
 
-				// 将用户打分分为学习集合和测试集合
-				splitUserRating(userRating, userRatingLearning,
-						userRatingTesting);
+			Map<String, Double> objectCount = new HashMap<String, Double>();
 
-				Map<String, Double> objectFrequency = new HashMap<String, Double>();// object的频率
-				LoadObjectFrequency(objectFrequency);
+			
 
-				Map<String, Double> objectCount = new HashMap<String, Double>();
-
-				Map<Integer, String> movieCode = new HashMap<Integer, String>();
-
-				movieLenCode(movieCode);
-
-				// System.out.println("用户的浏览历史为:");
-				// System.out.println();
-				double timeWeight=1.0;
-				for (Rating r : userRatingTesting.userRatings) {
-					// resource = "http://dbpedia.org/resource/" + resource;
-					String name = movieCode.get(r.movieid);
-					FilmObject f = filmList.get(filmCode.get(name));
-
-					// System.out.println(r.time);
-					// System.out.println(f.nameurl + "," + r.rating);
-					for (Pair p : f.links) {
-
-						String object = p.object;
-						if (objectCount.containsKey(object)) {
-							objectCount.put(object, objectCount.get(object) + 1
-									);
-						} else {
-							objectCount.put(object,1.0);
-						}
+			// System.out.println("用户的浏览历史为:");
+			// System.out.println();
+			double timeWeight = 1.0;
+			//计算用户的model1
+			for (Rating r : userRatingLearning.userRatings) {
+				String name = movieCode.get(r.movieid);
+				FilmObject f = filmList.get(filmCode.get(name));
+				for (Pair p : f.links) {
+					String object = p.object;
+					if (objectCount.containsKey(object)) {
+						objectCount.put(object, objectCount.get(object) + 1);
+					} else {
+						objectCount.put(object, 1.0);
 					}
 				}
-
-				Map<String, Double> objectValue = new HashMap<String, Double>();
-				for (String object : objectCount.keySet()) {
-					double number = objectCount.get(object);
-					double fre = objectFrequency.get(object);
-					if (number >= 2) {
-						// objectValue.put(object, number * Math.log(1.0 /
-						// fre));
-						objectValue.put(object, number * Math.log(1.0 / fre));
-					}
-				}
-
-				// 对object tag排序
-				Map<String, Double> sortedMap = sortMapByValue(objectValue);
-				// printMap(sortedMap);
-				//
-				// System.out.println();
-				// System.out.println();
-				// 获取topN
-				sortedMap = getTopNMap(sortedMap);
-				// System.out.println(sortedMap.size());
-				// System.out.println("用户的sequence向量为：");
-				// printMap(sortedMap);
-
-				// System.out.println("相似度结果为");
-
-				// System.out.println("随机相似度结果为");
-				Map<String, Double> allResult = new HashMap<String, Double>();
-				for (int i = 0; i < filmList.size(); i++) {
-					FilmObject f = filmList.get(i);
-					double rele = CommonRecommenderModel
-							.getUserSequenceSimiWithMovie(f, sortedMap);
-					// System.out.println(f.nameurl+","+rele);
-					allResult.put(f.nameurl, rele);
-				}
-
-				Map<String, Double> sortResult = sortMapByValue(allResult);
-				Map<String, Integer> sortNum = new HashMap<String, Integer>();
-
-				// System.out.println("全部电影的排序结果为：");
-				int i = 0;
-				for (String s : sortResult.keySet()) {
-					// System.out.println(s+","+sortResult.get(s));
-					i++;
-					sortNum.put(s, i);
-				}
-
-				double MRR = 0;
-
-				for (Rating r : userRatingLearning.userRatings) {
-					String name = movieCode.get(r.movieid);
-					// System.out.println(name + "," + sortNum.get(name));
-					MRR += 1.0 / sortNum.get(name);
-
-				}
-				// System.out.println("用户" + userid + "的MRR值为" + MRR);
-				totalMRR += MRR;
-				// System.out.println();
 			}
 
-			System.out.println( " average MRR=" + totalMRR / totalNum);
+			Map<String, Double> objectValue = new HashMap<String, Double>();
+			for (String object : objectCount.keySet()) {
+				double number = objectCount.get(object);
+				double fre = objectFrequency.get(object);
+				if (number >= 2) {
+					objectValue.put(object, number * Math.log(1.0 / fre));
+				}
+			}
+
+			// 对object tag排序
+			Map<String, Double> sortedMap = sortMapByValue(objectValue);
+			sortedMap = getTopNMap(sortedMap);
+
+			Map<String, Double> allResult = new HashMap<String, Double>();
+			for (int i = 0; i < filmList.size(); i++) {
+				FilmObject f = filmList.get(i);
+				double rele = CommonRecommenderModel
+						.getUserSequenceSimiWithMovie(f, sortedMap);
+				// System.out.println(f.nameurl+","+rele);
+				allResult.put(f.nameurl, rele);
+			}
+
+			Map<String, Double> sortResult = sortMapByValue(allResult);
+			Map<String, Integer> sortNum = new HashMap<String, Integer>();
+
+			// System.out.println("全部电影的排序结果为：");
+			int i = 0;
+			for (String s : sortResult.keySet()) {
+//				System.out.println(s+","+sortResult.get(s));
+				i++;
+				sortNum.put(s, i);
+			}
+			double precision = 0;
+			double recall=0;
+			
+			int rightRecommendNumber=0;
+			
+			
+			/**
+			 * 只计算用户自己的测试集里的电影
+			 */
+			sortNum=sortByUserHistory(sortNum,userRatingTesting);
+		
+			int testSize=userRatingTesting.userRatings.size();
+			
+//			printMapInteger(sortNum);
+			meanRating(userRatingTesting);
+			for (Rating r : userRatingTesting.userRatings) {
+				
+				String name = movieCode.get(r.movieid);
+				int raking=sortNum.get(name);
+				if(raking<=CommomFunction.TOPN)
+					rightRecommendNumber++;
+			}
+			precision=1.0*rightRecommendNumber/CommomFunction.TOPN;
+			recall=1.0*rightRecommendNumber/testSize;
+			System.out.println("用户" + userid + "的recall=" + recall+",precision="+precision);
+			precisionSum+=precision;
+			recallSum+=recall;
+			// System.out.println();
 		}
-//	}
+
+		System.out.println(" average recall=" + recallSum/totalNum+",precision="+precisionSum / totalNum);
+	}
+	public static Map<String, Integer> sortByUserHistory(Map<String, Integer> sortNum,UserRatingObject userRatingTesting){
+		Map<String, Double> newSort=new HashMap<String, Double>();
+		for(Rating r : userRatingTesting.userRatings){
+			String name = movieCode.get(r.movieid);
+			newSort.put(name,sortNum.get(name)*1.0);
+		}
+		newSort=sortMapByValueAsc(newSort);
+		
+		Map<String, Integer> sortNum2=new HashMap<String, Integer>();
+		int i=0;
+		for (String s : newSort.keySet()) {
+//			System.out.println(s+","+sortResult.get(s));
+			i++;
+			sortNum2.put(s, i);
+		}
+		return sortNum2;
+	}
 }

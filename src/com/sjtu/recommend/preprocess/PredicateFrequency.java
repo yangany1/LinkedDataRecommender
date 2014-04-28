@@ -26,11 +26,11 @@ public class PredicateFrequency {
 	public static void main(String[] args) throws Exception {
 		List<FilmObject> filmList = new ArrayList<FilmObject>();
 		CommomFunction.loadFilmObjectFromFile(filmList,
-				CommomFunction.FILM_LINKS_DELETE_OBJECT_STRING);
+				CommomFunction.FILM_LINKS_DELETE_SAME_PREDICATE);
 
 		
 		FileWriter writer = new FileWriter(
-				CommomFunction.FILM_LINKS_PREDICATE_FREQUENCY, false);
+				"files/predicate/predicate_frequency", false);
 		BufferedWriter bw = new BufferedWriter(writer);
 		
 		Map<String, Integer> linkMap = new HashMap<String, Integer>();
